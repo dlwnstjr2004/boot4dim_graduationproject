@@ -1,4 +1,4 @@
-flex 3개
+//flex 3개
 
 #define ANALOG_PIN_0 36
 #define flex_pin1 34
