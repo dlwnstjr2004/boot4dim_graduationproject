@@ -3,6 +3,10 @@
 // August 17, 2014
 // Public Domain
 
+/* gyro sensor base code
+ * this code is only base data
+ * this data is not calculate 
+ */
 #include<Wire.h>
 
 const int MPU_addr=0x68; // I2C address of the MPU-6050

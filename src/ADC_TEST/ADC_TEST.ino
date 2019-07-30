@@ -3,6 +3,10 @@
 #define ANALOG_PIN_0 33 // ADC
 int LED_BUILTIN = 2;
 int analog_value = 1;
+/* Arduino ADC PIN TEST
+ * used esp32 dev module
+ * VN,VP PIN can use ADC PIN
+ */
 void setup() {
   // put your setup code here, to run once:
   pinMode(LED_BUILTIN, OUTPUT);
