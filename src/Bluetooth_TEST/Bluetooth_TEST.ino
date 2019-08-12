@@ -10,14 +10,14 @@
 #error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
 #endif
 
-int LED_BUILTIN = 2;
+int LED_BUILTIN_BLUETOOTH = 2;
 
 BluetoothSerial SerialBT;
 char OnCondition = 's';
 char OffCondition = 'a';
 char input;
 void setup() {
-  pinMode(LED_BUILTIN,OUTPUT);
+  pinMode(LED_BUILTIN_BLUETOOTH,OUTPUT);
   Serial.begin(115200);
   SerialBT.begin("ESP32test"); //Bluetooth device name
   Serial.println("The device started, now you can pair it with bluetooth!");
@@ -31,9 +31,9 @@ void loop() {
   if (SerialBT.available()) {
     Serial.write(input = SerialBT.read());
     if (input == 's')
-        digitalWrite(LED_BUILTIN, HIGH);  
+        digitalWrite(LED_BUILTIN_BLUETOOTH, HIGH);  
     else if(input == 'a')
-        digitalWrite(LED_BUILTIN, LOW);
+        digitalWrite(LED_BUILTIN_BLUETOOTH, LOW);
   }
   delay(20);
 }

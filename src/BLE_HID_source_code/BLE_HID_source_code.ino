@@ -46,7 +46,7 @@ class MyCallbacks : public BLEServerCallbacks {
 };
 
 void taskServer(void*){
-    BLEDevice::init("Backpack-MeowMeow");
+    BLEDevice::init("Boot4dim_BLEHID");
     BLEServer *pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyCallbacks());
     hid = new BLEHIDDevice(pServer);
