@@ -6,6 +6,23 @@
   - HM-10 모듈과 esp32 보드가 auto connect 를 할 수 있도록 esp32 client의   UUID를 HM-10 모듈의 UUID와 맞춰주면 auto connect가능하도록 바뀜.
 - 자이로 센서를 통한 미세값 조정중
 - Reset 버튼을 제작(송신부, 수신부)
+- 신호를 정리함
+  - TF : Key/Mouse change
+  - -----------------
+  - RC : Mouse Right
+  - LC : Mouse Left
+  - SU : Scroll up
+  - SD : Scroll down
+  - __/__/ : Mouse tracking
+  - ----------------- 
+  - SB : Space Bar
+  - ZI : Ctrl + Scroll up
+  - ZO : Ctrl + Scroll down
+  - AU : Arrow Up
+  - AD : Arrow Down
+  - AL : Arrow Left
+  - AR : Arrow Right
+  - PS : Print ScreenShot
 
 # 8/26일 예정상황
 - Restandard 함수 조정

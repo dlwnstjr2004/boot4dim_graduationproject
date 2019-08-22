@@ -38,9 +38,8 @@ void setup() {
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
-
-
-  Serial.println("Goodnight moon!");
+  
+  Serial.println("Start!");
 
   // set the data rate for the SoftwareSerial port
   mySerial.begin(115200);
@@ -51,16 +50,16 @@ void loop() { // run over and over
 //    Serial.write(mySerial.read());
 //  }
   if(Serial.available()){
-    char read_data = Serial.read();
-    Serial.write(read_data);
-    if(read_data == 'a'){
+    String read_data = Serial.readStringUntil('\n');
+    Serial.println(read_data);
+    if(read_data == "up"){
       //Mouse.move(x축,y축,스크롤)
       //x축 >= 0 >> 오른쪽 이동
       //y축 >= 0 >> 아래쪽 이동
       //스크롤 >= 0 >> 위 이동
       Mouse.move(0,0,1);
     }
-    else if(read_data == 'b'){
+    else if(read_data == "down"){
       Mouse.move(0,0,-1);
     }
 /*
@@ -78,6 +77,15 @@ void loop() { // run over and over
       Mouse.release(MOUSE_LEFT);
     }
   }
+*/
+/*
+ * 인덱스를 이용하여 나누는법
+    String inString = Serial.readStringUntil('\n');
+    int index_x = inString.indexOf(',');     
+    int index_y = inString.length(); 
+    float x = inString.substring(0, index_x).toFloat();     
+    float y = inString.substring(index_x+1,index_y).toFloat(); 
+    
 */
   }
   delay(10);
