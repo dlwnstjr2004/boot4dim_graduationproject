@@ -1,3 +1,4 @@
+
 #include <SoftwareSerial.h>
 #include "Mouse.h"
 #include "Keyboard.h"
@@ -17,10 +18,14 @@ void Logic_start(String read_data_frist){
   do{
     index_x = inString.indexOf('.');     
     index_y = inString.length(); 
+    
+    if(index_x != 2){Serial.println("break");break;}
+    
     inString_front = inString.substring(0, index_x);  
     inString_back = inString.substring(index_x+1,index_y); 
     inString = inString_back;
     if(inString_front == "TF"){
+      
       switch(Keyboard_Mouse_mode){
         case 0:Keyboard_Mouse_mode=1;break;
         case 1:Keyboard_Mouse_mode=2;break;
@@ -31,25 +36,46 @@ void Logic_start(String read_data_frist){
     }
     else if(Keyboard_Mouse_mode == 1){
       if(inString_front == "RC" ){
-        Mouse.press(MOUSE_RIGHT);
-        delay(1);
-        Mouse.release(MOUSE_RIGHT);
+        int number_click1 = inString.indexOf('.');
+        String click_order = inString.substring(0, number_click1);
+        String click_order_back = inString.substring(number_click1+1, inString.indexOf('\n'));
+        inString = click_order_back;
+        //Right Click Press
+        if(click_order == "PR"){    
+          Mouse.press(MOUSE_RIGHT);
+        }
+        //Right Click Release
+        else if(click_order == "RL"){ 
+          Mouse.release(MOUSE_RIGHT);
+        }
 //        Serial.println("RC");
       }
       else if(inString_front == "LC"){
-        Mouse.press(MOUSE_LEFT);
-        delay(1);
-        Mouse.release(MOUSE_LEFT);
+        int number_click1 = inString.indexOf('.');
+        String click_order = inString.substring(0, number_click1);
+        String click_order_back = inString.substring(number_click1+1, inString.indexOf('\n'));
+        inString = click_order_back;
+        //Left Click Release
+        if(click_order == "PR"){
+          Mouse.press(MOUSE_LEFT);
+        }
+        //Left Click Release
+        else if(click_order == "RL"){
+          Mouse.release(MOUSE_LEFT);
+        }
 //        Serial.println("LC");
       }
+      //Scroll Up
       else if(inString_front == "SU"){
         Mouse.move(0,0,1);
 //        Serial.println("SU");
       }
+      //Scroll Down
       else if(inString_front == "SD"){
         Mouse.move(0,0,-1);
 //        Serial.println("SD");
       }
+      //Mouse Tracking
       else if(inString_front == "MT"){
         int number_x = inString.indexOf('/');
         int number_y = inString.indexOf('.');
@@ -112,7 +138,7 @@ void Logic_start(String read_data_frist){
 
 void setup() {
   // Open serial communications and wait for port to open:
-  Serial.begin(115200);
+  Serial.begin(9600);
   Mouse.begin();
   Keyboard.begin();
   while (!Serial) {
@@ -122,14 +148,18 @@ void setup() {
   Serial.println("Start!");
 
   // set the data rate for the SoftwareSerial port
-  mySerial.begin(115200);
+  mySerial.begin(9600);
 }
-
+bool start = false;
 void loop() { // run over and over
   if(mySerial.available()){
     String read_data = mySerial.readStringUntil('\n');
     Serial.println("read_data : " + read_data);
-    Logic_start(read_data);
-
+    if(start == false){
+      start = true;
+    }
+    else {
+      Logic_start(read_data);
+    }
   }
 }
