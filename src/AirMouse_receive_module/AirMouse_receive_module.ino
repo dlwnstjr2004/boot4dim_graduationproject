@@ -1,9 +1,11 @@
-
 #include <SoftwareSerial.h>
 #include "Mouse.h"
 #include "Keyboard.h"
 
 SoftwareSerial mySerial(10, 11); // RX, TX
+int xp = 0, xm = 0, yp = 0, ym = 0;
+int move_x;
+int move_y;
 
 int Keyboard_Mouse_mode = 1;
 //0: Off
@@ -79,9 +81,9 @@ void Logic_start(String read_data_frist){
       else if(inString_front == "MT"){
         int number_x = inString.indexOf('/');
         int number_y = inString.indexOf('.');
-        int move_x = inString.substring(0, number_x).toInt();
-        int move_y = inString.substring(number_x+1, number_y).toInt();
-        Mouse.move(move_x,move_y);
+        move_x = inString.substring(0, number_x).toInt();
+        move_y = inString.substring(number_x+1, number_y).toInt();
+       // Mouse.move(move_x,move_y);
         inString_back = inString.substring(number_y+1,inString.indexOf('\n')); 
         inString = inString_back;
 //        Serial.println("MT");
@@ -148,7 +150,7 @@ void setup() {
   Serial.println("Start!");
 
   // set the data rate for the SoftwareSerial port
-  mySerial.begin(9600);
+  mySerial.begin(115200);
 }
 bool start = false;
 void loop() { // run over and over
@@ -161,5 +163,35 @@ void loop() { // run over and over
     else {
       Logic_start(read_data);
     }
+  }
+  else{
+    xp = move_x >0 && move_x < 4 ? xp += move_x : xp;
+    xm = move_x > -4 && move_x < 0 ? xm += move_x: xm;
+    yp = move_y >0 && move_y < 4 ? yp += move_y : yp;
+    ym = move_y > -4 && move_y < 0 ? ym += move_y: ym;
+
+    if(xp > 2){
+      xp-=2;
+      Mouse.move(1,0);   
+    }
+    if(xm < -2){
+      xm +=2;
+      Mouse.move(-1,0); 
+    }
+    
+    if(yp > 2){
+      yp-=2;
+      Mouse.move(0,1);   
+    }
+    if(ym < -2){
+      ym +=2;
+      Mouse.move(0,-1); 
+    }
+
+    for(int i =0; i<10;i++)
+    {
+        Mouse.move(move_x/4,move_y/4);
+    }
+    
   }
 }

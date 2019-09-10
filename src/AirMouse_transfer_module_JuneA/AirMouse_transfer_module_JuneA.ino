@@ -12,21 +12,17 @@
   * 
   */
 
-#include<Wire.h>
-#include<Math.h>
+#include <Wire.h>
+#include <Math.h>
+#include <flex.h>
 #include "BLEDevice.h"
 
 //Pin number
+flex flex_sensor;
 #define Muscle_pin 39 // 근육센서
-#define flex_pin1 34  // 중지
-#define flex_pin2 33  // 검지
-#define flex_pin3 32  // 엄지
 
 //sensor max number
 #define Muscle_limit 60
-#define flex_value1 2000
-#define flex_value2 2000
-#define flex_value3 1700
 
 //timer terminal
 #define change_dir_terminal 50
@@ -34,15 +30,22 @@
 
 //flag signal
 bool muscle_flag;
+bool left_click_flag;
+bool right_click_flag;
+bool click_flag;
+bool zoom_in_flag;
+bool zoom_out_flag;
+bool spacebar_flag;
 
-// signal (muscle)
-int muscle_timer_now;
-int muscle_timer_pre;
+// tiemr (muscle)
+int muscle_timer_pre = 0;
+int click_timer_pre = 0;
 
 // signal (gyro)
 #define MPU_addr 0x68 // mpu address
 float dt;
 int16_t AcX, AcY, AcZ, Tmp, GyX, GyY, GyZ;
+int16_t gyroY,gyroZ;
 float accel_angle_x, accel_angle_y, accel_angle_z;
 float gyro_angle_x, gyro_angle_y, gyro_angle_z;
 float filtered_angle_x, filtered_angle_y, filtered_angle_z;
@@ -79,11 +82,15 @@ int change_dir_timer = 0;
 int sign_flag_timer = 0;
 int down_sign_flag_timer = 0;
 
+int Sensitivity = 600;
+int delayi = 3;
 
-
+uint8_t i2cData[14];
+const uint8_t IMUAddress = 0x68; // AD0 is logic low on the PCB
+const uint16_t I2C_TIMEOUT = 1000; // Used to check for errors in I2C communication
 
 // NowState
-int NowState = 0;
+int NowState = 1;
 /*
  * 0 : 정지
  * 1 : 마우스
@@ -195,29 +202,26 @@ void InitBLE();
 void State_Change();
 
 //mpu 6050 함수 정의============================
+
 void initMPU6050();
-
 void calibAccelGyro();
-
 void initDT();
-
 void readAccelGyro();
-
 void calcDT();
-
 void HandAction();
-
 void InitHandAction();
-
 void UpdateHandAction();
-
 void calcAccelYPR();
-
 void calcGyroYPR();
-
 void calcFilteredYPR();
-
 void Restandard(); // to make a new standard for Gyro
+void When_Tilted_Down();
+void When_Tilted_Up();
+void When_Tilted_Side();
+void Mouse_move_from_z();
+void Compensation_VX_From_Y();
+void Sending_Arrow_Data();
+uint8_t i2cRead(uint8_t registerAddress, uint8_t* data, uint8_t nbytes);
 
 // timer
 bool timer(int StandardTime, int Terminal_time );
@@ -265,24 +269,24 @@ void loop() {
 
     //send data flag설정
     State_Change();
-//    SendFlexData();
-//    HandAction();
+    SendFlexData();
+    HandAction();
 
     //send data
-//    Send_Data();
+    Send_Data();
 //    
-//    Restandard();
+    Restandard();
   
   }else if(doScan){
     BLEDevice::getScan()->start(0);  // this is just eample to start scan after disconnect, most likely there is better way to do it in arduino
   }
-  delay(10);
+  delay(delayi);
 }
 
 
 
 /////함수부분
-//****************** 초기화
+//****************************************************************************************** 초기화
 void initMPU6050(){
   Wire.begin();
   Wire.beginTransmission(MPU_addr);
@@ -367,20 +371,18 @@ void calibAccelGyro(){
   baseGyZ = sumGyZ / 10;
 }
 
-//****************** 계산
+//****************************************************************************************** 계산
 void readAccelGyro(){
-  Wire.beginTransmission(MPU_addr);
-  Wire.write(0x3B);
-  Wire.endTransmission(false);
-  Wire.requestFrom(MPU_addr, 14, true);
-
-  AcX = Wire.read() << 8|Wire.read();
-  AcY = Wire.read() << 8|Wire.read();
-  AcZ = Wire.read() << 8|Wire.read();
-  Tmp = Wire.read() << 8|Wire.read();
-  GyX = Wire.read() << 8|Wire.read();
-  GyY = Wire.read() << 8|Wire.read();
-  GyZ = Wire.read() << 8|Wire.read();
+  while(i2cRead(0x3B,i2cData,14));
+  AcX = ((i2cData[0] << 8) | i2cData[1]);
+  AcY = ((i2cData[2] << 8) | i2cData[3]);
+  AcZ = ((i2cData[4] << 8) | i2cData[5]);
+  GcX = ((i2cData[8] << 8) | i2cData[9]);
+  GcY = ((i2cData[10] << 8) | i2cData[11]);
+  GcZ = ((i2cData[12] << 8) | i2cData[13]);
+ 
+  gyroY = GcY / Sensitivity / 1.1 ;
+  gyroZ = GcZ / Sensitivity  * -1;
 }
 
 void calcDT(){
@@ -443,70 +445,121 @@ void calcFilteredYPR(){
   }
 }
 
-//****************** 실행부
+//****************************************************************************************** 실행부
 void State_Change(){
   int analog_muscle;
   analog_muscle = analogRead(Muscle_pin);
-  muscle_timer_now = millis();
   if (analog_muscle < Muscle_limit)
   {
-    muscle_timer_pre = muscle_timer_now;
+    muscle_timer_pre = millis();
     muscle_flag = false;
   }
-  else if( (muscle_timer_now - muscle_timer_pre) == muscle_terminal)
+  else if(timer(muscle_timer_pre,muscle_terminal))
   {
     muscle_flag = true;
-    if (NowState == 2)
-    {
-      NowState == 0;
-    }
-    else NowState++;
   }
 }
 
 void Send_Data(){
-  String newValue = "SB.\n";
-  pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+//  if(muscle_flag == true){
+//    String newValue = "TF.\n";
+//    pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+//    if (NowState == 2)
+//    {
+//      NowState = 0;
+//    }
+//    else NowState++;
+//  }
+//  else if(NowState == 1){
+    if(NowState ==1){
+//    if(left_click_flag && right_click_flag){  //SCROLL 미구현
+//      String newValue = "TF.\n";
+//      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+//    }
+//    else if(left_click_flag && !(right_click_flag) && timer(click_timer_pre,50)){
+//      String newValue = "LC.PR\n";
+//      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+//      click_flag = true;
+//    }
+//    else if(right_click_flag && !(left_click_flag) && timer(click_timer_pre,50)){
+//      String newValue = "RC.PR\n";
+//      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+//      click_flag = true;
+//    }
+//    else if(click_flag && !(left_click_flag) && !(right_click_flag)){
+//      String newValue = "LC.RL.RC.RL\n";
+//      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+//      click_flag = true;
+//    }
+//    else {
+      String newValue = "MT."+ (String)gyroZ + "/" + (String)gyroY +".\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());   
+//    }
+  }
+  else if(NowState == 2){
+    if(zoom_in_flag){
+      String newValue = "ZI.\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+    }
+    else if(zoom_out_flag){
+      String newValue = "ZO.\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+    }
+    else if(spacebar_flag){
+      String newValue = "SB.\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+    }
+  }
 }
 
 void SendFlexData(){
-  int flex_analog1;
-  int flex_analog2;
-  int flex_analog3;
+  flex_sensor.setValue();
   
-  flex_analog1 = analogRead(flex_pin1);
-  flex_analog2 = analogRead(flex_pin2);
-  flex_analog3 = analogRead(flex_pin3);
   if(NowState == 1)
   {
-    if(flex_analog3<flex_value3)
+    if(flex_sensor.isThumbClicked())
     { // 엄지 press
-      
+      if(flex_sensor.isIdxClicked()){
+        left_click_flag = true;
+        if(!(timer(click_timer_pre,50))){
+          click_timer_pre = millis();
+        }
+      }
+      else if(flex_sensor.isIdxReleased()){
+        left_click_flag = false;
+      }
+      if(flex_sensor.isMidClicked()){
+        right_click_flag = true;
+        if(!(timer(click_timer_pre,50))){
+          click_timer_pre = millis();
+        }
+      }
+      else if(flex_sensor.isMidReleased()){
+        right_click_flag = false;
+      }      
     }
   }
   //============== keyboard mode (without analog_value3: 엄지) ==============
   else if(NowState == 2)
   {
-    if((flex_analog1<flex_value1)&&(flex_analog2<flex_value2))
+    if(flex_sensor.isThumbReleased() && flex_sensor.isMidClicked() && flex_sensor.isIdxClicked())
     { // 다른건 1000이었는데 얘만 1650이상이었음. 이거 뭘로해야함?
       if( filtered_angle_x > 45 )
       {
-        String newValue = "ZI.\n";
-        pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+        zoom_in_flag = true;
+        zoom_out_flag = false;
       }
       else if( filtered_angle_x < -45 )
       {
-        String newValue = "ZO.\n";
-        pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+        zoom_out_flag = true;
+        zoom_in_flag = false;
       }
     }
-    else if(flex_analog1<flex_value1)
+    else if(flex_sensor.isThumbReleased() && flex_sensor.isIdxReleased() && flex_sensor.isMidClicked())
     { // 다른건 1000이었는데 얘만 1550이상이었음. 이거 뭘로해야함?
-      String newValue = "SB.\n";
-      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+      spacebar_flag = true;
     }
   }
-  
 }
 
 void Restandard() // to make a new standard for Gyro
@@ -526,9 +579,7 @@ void Restandard() // to make a new standard for Gyro
 }
 
 bool timer(int StandardTime, int Terminal_time ){
-  int now_time;
-  now_time=millis();
-  if( (now_time-StandardTime) > Terminal_time ){ // if it reached Terminal time
+  if( (millis()-StandardTime) > Terminal_time ){ // if it reached Terminal time
     return true;
   }
   else{
@@ -536,124 +587,202 @@ bool timer(int StandardTime, int Terminal_time ){
   }
 }
 
-void HandAction(){ // right hand
-
-// ================ tilted angle need at least 20 degree. From here, the code will check which hand action you do. ================
-// VX, VY save mouse point moving (delta)
-// two types of snap flag ( ex : up_snap, up_snap_past ) can figure out your current hand snap action to keyboard::Arrows
-
-//check the two flags to figure out current action.
-  if(NowState == 1)
+void HandAction(){ //all about Gyro handaction
+//============= Data processing =============
+  if(filtered_angle_y > 20) // when tilted down. codes in below check hand snap and mouse point both.
   {
-    float radian = 0.0174533;
-    int dis_x = tan(filtered_angle_x*radian) * -20;
-    int dis_y = tan(filtered_angle_y*radian) * 20;
-    if(dis_x < 5 && dis_x > -5 && dis_y < 5 && dis_y > -5){
-      dis_x= 0;
-      dis_y= 0;
-    }
-    dis_x = dis_x*3;
-    dis_y = dis_y*3;
-    String newValue2 = "MT."+ (String)dis_x + "/" + (String)dis_y +".\n";  // sending mouse pointer!
-    pRemoteCharacteristic->writeValue(newValue2.c_str(), newValue2.length());
-//      Serial.println("MT."+(String)dis_x+"/"+(String)dis_y+".\n");
+    When_Tilted_Down();
   }
-  else if(NowState == 2)
+  else if(filtered_angle_y < -20) // when tilted up
   {
-    if(filtered_angle_y > 40 && abs(filtered_angle_x) < 20) // when tilted down 
-    {
-      if(timer(sign_flag_timer,500)){
-        down_sign = true;  
-        sign_flag_timer = millis();
-      }
-    }
-    
-    // when tilted up
-    else if(filtered_angle_y < -25 && abs(filtered_angle_x) < 20) 
-    {
-      if(timer(sign_flag_timer,500)){
-        up_sign = true;
-        sign_flag_timer = millis();
-      }
-    }
-    // when tilted side. codes in below only check hand swing
-    else if ( (filtered_angle_x > 35) && abs(filtered_angle_y) < 20 )
-    {
-      if(timer(sign_flag_timer,500)){
-        left_sign = true;
-        sign_flag_timer = millis();
-      }
-    }
-    else if (filtered_angle_x < -30 && abs(filtered_angle_y) < 20) // (up_sign == true)
-    {
-      if(timer(sign_flag_timer,500)){
-        right_sign = true;
-        sign_flag_timer = millis();
-      }
-    }
-    
-    else
-    {
-      right_sign = false;
-      left_sign = false;
-      up_sign = false;
-      down_sign = false;
-    }
-
-    if(timer(snap_timer, snap_terminal)) // If timer is bigger than terminal => new order available
-    {
-      if( (up_sign == true) && (up_sign_past == false) )
-      {
-        Serial.println("Arrow Up");
-        String newValue = "AU.\n";
-        pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
-
-      }
-      else if( (down_sign == true) && (down_sign_past == false) )
-      {
-        Serial.println("Arrow Down");
-        String newValue = "AD.\n";
-        pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
-
-      }
-      else if( (left_sign == true) && (left_sign_past == false) )
-      {
-        Serial.println("Arrow Left");
-        String newValue = "AL.\n";
-        pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
-
-      }
-      else if( (right_sign == true) && ( right_sign_past == false) )
-      {
-        Serial.println("Arrow Right");
-        String newValue = "AR.\n";
-        pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
-
-      }
-    }
-    else { reset_gyro_timer = millis() - snap_timer; } // 마지막으로 들어온 신호와의 차이.
+    When_Tilted_Up();
   }
-  
-//1. flag update set;
+  else
+  {
+    up_sign = false;
+    down_sign = false;
+    VY = 0;
+  }
+
+  Mouse_move_from_z(); // move to left or right : it`s not about tilt. just handle pointer
+  Compensation_VX_From_Y(); //compensation. Y값에 따른 VX 보정부분
+
+  if ( (filtered_angle_x > 37) ) // when tilted side. codes in below only check hand snap
+  {
+    When_Tilted_Side();
+  }
+  else
+  {
+    right_sign = false;
+    left_sign = false;
+  }
+
+//============= Transmit output =============
+  if ( NowState == 2 ) // output1 : Sending Arrow key [keyboard]
+  {
+    Sending_Arrow_Data();
+  }
+  else if( NowState == 1 ) // output2 : Sending Mouse point
+  {
+      
+  } 
+
+//============= Update data =============
+// outro1 : flag update set;
   up_sign_past=up_sign;
   down_sign_past=down_sign;
   left_sign_past=left_sign;
-  right_sign_past=right_sign; 
-  
-//3. Gyro can give Assestant about Scroll Direction.
-  if( timer(change_dir_timer, change_dir_terminal) == true ) // If timer is bigger than terminal => new order available
+  right_sign_past=right_sign;
+
+// outro2 : update scroll direction
+  if ( timer(change_dir_timer,change_dir_terminal) )
   {
-    if(filtered_angle_x > 60) // if User snap once, Scroll Direction is upside down.
+    if(filtered_angle_x > 60)
     {
-      if (change_dir == true)
-      {
-        change_dir = false;
-      }
-      else
-      {
-        change_dir = true;
-      }
+      change_dir = ~change_dir;
       change_dir_timer = millis();
     }
   }
+}
+
+void When_Tilted_Down() // handaction inner funtion 1
+{
+  down_sign = true;
+  if( filtered_angle_x > 10 )// left down on computer monitor
+  {
+    VX = -sqrt( pow(filtered_angle_x , 2) + 4*pow( (90-abs(filtered_angle_z)) , 2) );//1
+    VY = filtered_angle_y;
+  }
+  else if ( filtered_angle_x < -10 )//|| (filtered_angle_z < -20) ) // right down on computer monitor
+  {
+    VX = sqrt( pow(filtered_angle_x , 2) + 4*pow( (90-abs(filtered_angle_z)) , 2) );
+    VY = filtered_angle_y;
+  }
+  else
+  {
+    VY = filtered_angle_y;
+    VX = 0;
+  }
+}
+
+void When_Tilted_Up() // handaction inner funtion 2
+{
+  up_sign = true;
+  if( filtered_angle_x < -10 ) //|| (filtered_angle_z > 20) ) // left up on computer monitor
+  {
+    VX = -sqrt( pow(filtered_angle_x , 2) + 4*pow( (90-abs(filtered_angle_z)) , 2) );
+    VY = filtered_angle_y;
+  }
+  else if ( filtered_angle_x > 10 ) //|| (filtered_angle_z < -20) ) // right up on computer monitor
+  {
+    VX = sqrt( pow(filtered_angle_x , 2) + 4*pow( (90-abs(filtered_angle_z)) , 2) );
+    VY = filtered_angle_y;
+  }
+  else
+  {
+    VY = filtered_angle_y;
+    VX = 0;
+  }
+}
+
+void When_Tilted_Side() // handaction inner funtion 3
+{
+  if (filtered_angle_y > 20) // (down_sign == true)
+  {
+    left_sign = true;
+    down_sign = false;
+    right_sign = false;
+  }
+  else if (filtered_angle_y < -20) // (up_sign == true)
+  {
+    right_sign = true;
+    up_sign = false;
+    left_sign = false;
+  }
+  else
+  {
+    right_sign = false;
+    left_sign = false;
+  }
+}
+
+void Mouse_move_from_z() // handaction inner funtion 4
+{
+  if ( filtered_angle_z > 100 ) // move to left : it`s not about tilt. just handle pointer
+  {
+    VX = -sqrt( pow(filtered_angle_x , 2) + 4*pow( 90-abs(filtered_angle_z) , 2) );
+    VY = filtered_angle_y;
+  }
+  else if ( (filtered_angle_z < 80) && (filtered_angle_z > 50) ) // move to right : it`s not about tilt. just handle pointer
+  {
+    VX = sqrt( pow(filtered_angle_x , 2) + 4*pow( 90-abs(filtered_angle_z) , 2) );
+    VY = filtered_angle_y;
+  }
+  else { }//VX = 0; }
+}
+
+void Compensation_VX_From_Y() // handaction inner funtion 5
+{
+  if( (filtered_angle_y < 50) || (filtered_angle_y > -50) ) // compensation
+  {
+    if( abs(VX) < 80 ) VX = 0;
+  }
+}
+
+void Sending_Arrow_Data() // handaction inner funtion 6
+{
+  if( timer(snap_timer, snap_terminal) == true ) // If timer is bigger than terminal => new order available
+  {
+    if( (up_sign == true) && (up_sign_past == false) )
+    {
+      Serial.println("Arrow Up");
+      String newValue = "AU.\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+      snap_timer = millis();
+    }
+    else if( (down_sign == true) && (down_sign_past == false) )
+    {
+      Serial.println("Arrow Down");
+      String newValue = "AD.\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+      snap_timer = millis();
+    }
+    else if( (left_sign == true) && (left_sign_past == false) )
+    {
+      Serial.println("Arrow Left");
+      String newValue = "AL.\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+      snap_timer = millis();
+    }
+    else if( (right_sign == true) && ( right_sign_past == false) )
+    {
+      Serial.println("Arrow Right");
+      String newValue = "AR.\n";
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+      snap_timer = millis();
+    }
+  }
+  else { reset_gyro_timer = millis() - snap_timer; } // 마지막으로 들어온 신호와의 차이.
+}
+
+uint8_t i2cRead(uint8_t registerAddress, uint8_t* data, uint8_t nbytes) {
+  uint32_t timeOutTimer;
+  Wire.beginTransmission(IMUAddress);
+  Wire.write(registerAddress);
+  if(Wire.endTransmission(false)) // Don't release the bus
+    return 1; // Error in communication
+  Wire.requestFrom(IMUAddress, nbytes,(uint8_t)true); // Send a repeated start and then release the bus after reading
+  for(uint8_t i = 0; i < nbytes; i++) {
+    if(Wire.available())
+      data[i] = Wire.read();
+    else {
+      timeOutTimer = micros();
+      while(((micros() - timeOutTimer) < I2C_TIMEOUT) && !Wire.available());
+      if(Wire.available())
+        data[i] = Wire.read();
+      else
+        return 2; // Error in communication
+    }
+  }
+  return 0; // Success
 }
